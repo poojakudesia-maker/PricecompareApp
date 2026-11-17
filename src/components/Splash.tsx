@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { LogoMark } from './Logo';
-import { PLATFORMS, PLATFORM_ORDER } from '../data/platforms';
+import { PLATFORMS, PLATFORM_ORDER } from '../../shared/platforms.ts';
 import { PlatformBadge } from './PlatformBadge';
 
 export function Splash({ onDone }: { onDone: () => void }) {

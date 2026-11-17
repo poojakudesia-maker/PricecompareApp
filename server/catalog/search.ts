@@ -1,4 +1,4 @@
-import { CATALOG, type Product } from '../data/catalog';
+import { CATALOG, type Product } from './catalog.ts';
 
 export interface Suggestion {
   product: Product;

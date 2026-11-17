@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { PlatformBadge } from './PlatformBadge';
-import { BackIcon, BoltIcon, ClockIcon, CrownIcon, ExternalIcon, ShareIcon } from './Icons';
-import { PRODUCTS_BY_ID } from '../data/catalog';
-import { fetchComparison, type Comparison, type Offer } from '../data/priceService';
+import { ProductImage } from './ProductImage';
+import { AdSlot } from './AdSlot';
+import { BackIcon, BoltIcon, ChevronRight, ClockIcon, CrownIcon, PinIcon, ShareIcon } from './Icons';
+import { PLATFORMS } from '../../shared/platforms.ts';
+import type { Comparison, Offer } from '../../shared/types.ts';
+import { api, ApiError } from '../api';
+import { appLink } from '../lib/openApp';
 import { pushRecent } from '../lib/recent';
 import { go, rupee } from '../lib/router';
 
@@ -16,8 +20,7 @@ function useCountUp(target: number | null, ms = 600) {
     let raf = 0;
     const tick = (t: number) => {
       const k = Math.min(1, (t - start) / ms);
-      const eased = 1 - Math.pow(1 - k, 3);
-      setV(Math.round(from + (target - from) * eased));
+      setV(Math.round(from + (target - from) * (1 - Math.pow(1 - k, 3))));
       if (k < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -26,62 +29,71 @@ function useCountUp(target: number | null, ms = 600) {
   return v;
 }
 
-function StatusPill({ offer }: { offer: Offer }) {
-  if (offer.availability === 'in_stock') return <span className="pill pill--ok">In stock</span>;
-  if (offer.availability === 'out_of_stock') return <span className="pill pill--warn">Out of stock</span>;
-  return <span className="pill pill--muted">Not listed</span>;
-}
+const STATUS: Record<Offer['availability'], [string, string]> = {
+  in_stock: ['In stock', 'pill--ok'],
+  out_of_stock: ['Out of stock', 'pill--warn'],
+  not_listed: ['Not listed', 'pill--muted'],
+  unknown: ["Couldn't check", 'pill--muted'],
+};
 
 function OfferRow({ offer, isBest, maxPrice, index }: { offer: Offer; isBest: boolean; maxPrice: number; index: number }) {
+  const platform = PLATFORMS[offer.platformId];
   const available = offer.availability === 'in_stock';
   const off = available && offer.price! < offer.mrp ? Math.round(((offer.mrp - offer.price!) / offer.mrp) * 100) : 0;
   const width = available && maxPrice ? Math.max(18, (offer.price! / maxPrice) * 100) : 0;
+  const { href, newTab } = appLink(platform, offer.url);
 
   return (
-    <li className={`offer ${isBest ? 'is-best' : ''} ${available ? '' : 'is-unavailable'}`} style={{ animationDelay: `${index * 70}ms` }}>
-      <PlatformBadge platform={offer.platform} size={44} />
-      <div className="offer__main">
-        <div className="offer__top">
-          <span className="offer__name">{offer.platform.name}</span>
-          {isBest && (
-            <span className="tag-best">
-              <CrownIcon size={12} /> Lowest
-            </span>
-          )}
-        </div>
-        <div className="offer__sub">
-          {available ? (
-            <>
-              {offer.platform.scheduled ? <ClockIcon size={13} /> : <BoltIcon size={13} />}
-              {offer.eta}
-            </>
-          ) : (
-            <StatusPill offer={offer} />
-          )}
-        </div>
-        {available && (
-          <div className="offer__bar" aria-hidden="true">
-            <span style={{ width: `${width}%`, animationDelay: `${200 + index * 70}ms` }} />
-          </div>
-        )}
-      </div>
-      <div className="offer__price">
-        {available ? (
-          <>
-            <strong>{rupee(offer.price!)}</strong>
-            {off > 0 && (
-              <span className="offer__mrp">
-                <s>{rupee(offer.mrp)}</s> <em>{off}% off</em>
+    <li style={{ animationDelay: `${index * 70}ms` }} className="offer-wrap">
+      <a
+        className={`offer ${isBest ? 'is-best' : ''} ${available ? '' : 'is-unavailable'}`}
+        href={href}
+        target={newTab ? '_blank' : undefined}
+        rel="noopener noreferrer"
+        aria-label={`Open ${platform.name}${available ? `, ${rupee(offer.price!)}` : ''}`}
+      >
+        <PlatformBadge platform={platform} size={44} />
+        <div className="offer__main">
+          <div className="offer__top">
+            <span className="offer__name">{platform.name}</span>
+            {isBest && (
+              <span className="tag-best">
+                <CrownIcon size={12} /> Lowest
               </span>
             )}
-            <a className="offer__go" href={offer.url} target="_blank" rel="noopener noreferrer">
-              Open <ExternalIcon size={12} />
-            </a>
-          </>
-        ) : (
-          <span className="offer__na">—</span>
-        )}
-      </div>
+          </div>
+          <div className="offer__sub">
+            {available ? (
+              <>
+                {platform.scheduled ? <ClockIcon size={13} /> : <BoltIcon size={13} />}
+                {offer.eta}
+              </>
+            ) : (
+              <span className={`pill ${STATUS[offer.availability][1]}`}>{STATUS[offer.availability][0]}</span>
+            )}
+          </div>
+          {available && (
+            <div className="offer__bar" aria-hidden="true">
+              <span style={{ width: `${width}%`, animationDelay: `${200 + index * 70}ms` }} />
+            </div>
+          )}
+        </div>
+        <div className="offer__price">
+          {available ? (
+            <>
+              <strong>{rupee(offer.price!)}</strong>
+              {off > 0 && (
+                <span className="offer__mrp">
+                  <s>{rupee(offer.mrp)}</s> <em>{off}% off</em>
+                </span>
+              )}
+            </>
+          ) : null}
+          <span className="offer__go">
+            Open app <ChevronRight size={12} />
+          </span>
+        </div>
+      </a>
     </li>
   );
 }
@@ -107,30 +119,33 @@ function Skeleton() {
 }
 
 export function ProductPage({ id }: { id: string }) {
-  const product = PRODUCTS_BY_ID[id];
   const [data, setData] = useState<Comparison | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; notFound: boolean } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (!product) return;
-    pushRecent(id);
     window.scrollTo(0, 0);
     setData(null);
     setError(null);
     const ctrl = new AbortController();
-    fetchComparison(id, ctrl.signal)
-      .then(setData)
-      .catch((e) => e.name !== 'AbortError' && setError('Could not load prices. Check your connection and try again.'));
+    api
+      .compare(id, ctrl.signal)
+      .then((d) => {
+        setData(d);
+        pushRecent({ id: d.product.id, name: d.product.name, emoji: d.product.emoji });
+      })
+      .catch((e: ApiError) => e.name !== 'AbortError' && setError({ message: e.message, notFound: e.status === 404 }));
     return () => ctrl.abort();
-  }, [id, product]);
+  }, [id, attempt]);
 
-  const bestPrice = useCountUp(data?.best?.price ?? null);
+  const best = data?.offers.find((o) => o.platformId === data.bestPlatformId) ?? null;
+  const bestPrice = useCountUp(best?.price ?? null);
 
-  if (!product) {
+  if (error?.notFound) {
     return (
       <main className="pdp pdp--missing">
-        <p>We couldn't find that product.</p>
+        <p>{error.message}</p>
         <button className="btn" onClick={() => (location.hash = '#/')}>
           Back to search
         </button>
@@ -138,9 +153,12 @@ export function ProductPage({ id }: { id: string }) {
     );
   }
 
+  const product = data?.product;
+
   const share = async () => {
-    const text = data?.best
-      ? `${product.name} (${product.size}) is cheapest on ${data.best.platform.name} at ${rupee(data.best.price!)}`
+    if (!product) return;
+    const text = best
+      ? `${product.name} (${product.size}) is cheapest on ${PLATFORMS[best.platformId].name} at ${rupee(best.price!)}`
       : product.name;
     try {
       if (navigator.share) await navigator.share({ title: 'QuickHai', text, url: location.href });
@@ -164,26 +182,39 @@ export function ProductPage({ id }: { id: string }) {
           <BackIcon />
         </button>
         <span className="topbar__title">Compare prices</span>
-        <button className="iconbtn" onClick={share} aria-label="Share">
+        <button className="iconbtn" onClick={share} aria-label="Share" disabled={!product}>
           <ShareIcon />
         </button>
       </div>
 
-      <section className="phero">
-        <div className="phero__img" style={{ background: product.tint }}>
-          <span>{product.emoji}</span>
-        </div>
-        <div className="phero__info">
-          <span className="phero__brand">{product.brand === 'Fresh' ? product.category : product.brand}</span>
-          <h1>{product.name}</h1>
-          <span className="phero__size">{product.size} · MRP {rupee(product.mrp)}</span>
-        </div>
-      </section>
+      {product ? (
+        <section className="phero">
+          <ProductImage product={product} className="phero__img" />
+          <div className="phero__info">
+            <span className="phero__brand">{product.brand === 'Fresh' ? product.category : product.brand}</span>
+            <h1>{product.name}</h1>
+            <span className="phero__size">
+              {product.size} · MRP {rupee(product.mrp)}
+            </span>
+          </div>
+        </section>
+      ) : (
+        !error && (
+          <section className="phero">
+            <span className="phero__img shimmer sk" />
+            <div className="phero__info" style={{ flex: 1 }}>
+              <span className="sk sk--line shimmer" style={{ width: '30%' }} />
+              <span className="sk sk--line shimmer" style={{ width: '80%', height: 18 }} />
+              <span className="sk sk--line shimmer" style={{ width: '40%' }} />
+            </div>
+          </section>
+        )
+      )}
 
       {error && (
         <div className="error">
-          {error}
-          <button className="btn" onClick={() => location.reload()}>
+          {error.message}
+          <button className="btn" onClick={() => setAttempt((a) => a + 1)}>
             Retry
           </button>
         </div>
@@ -193,16 +224,16 @@ export function ProductPage({ id }: { id: string }) {
 
       {data && (
         <>
-          {data.best ? (
+          {best ? (
             <section className="best">
               <div className="best__label">Best price</div>
               <div className="best__row">
                 <div className="best__price">{rupee(bestPrice)}</div>
                 <div className="best__where">
-                  <PlatformBadge platform={data.best.platform} size={28} />
+                  <PlatformBadge platform={PLATFORMS[best.platformId]} size={28} />
                   <span>
-                    on <b>{data.best.platform.name}</b>
-                    <small>{data.best.eta}</small>
+                    on <b>{PLATFORMS[best.platformId].name}</b>
+                    <small>{best.eta}</small>
                   </span>
                 </div>
               </div>
@@ -215,23 +246,30 @@ export function ProductPage({ id }: { id: string }) {
           ) : (
             <section className="best best--none">
               <div className="best__label">Not available right now</div>
-              <p>None of the 5 apps have this in stock. Check back in a bit.</p>
+              <p>None of the 5 apps have this in stock at your pincode. Check back in a bit.</p>
             </section>
           )}
 
           <div className="list-head">
             <h2>All platforms</h2>
-            <span>
-              {inStock.length} of {data.offers.length} available
-            </span>
+            <button className="list-head__pin" onClick={go.profile}>
+              <PinIcon size={12} /> {data.pincode}
+            </button>
           </div>
+          <p className="list-sub">
+            {inStock.length} of {data.offers.length} available · tap any app to open it
+          </p>
           <ul className="offers">
             {data.offers.map((o, i) => (
-              <OfferRow key={o.platform.id} offer={o} isBest={o === data.best} maxPrice={maxPrice} index={i} />
+              <OfferRow key={o.platformId} offer={o} isBest={o.platformId === data.bestPlatformId} maxPrice={maxPrice} index={i} />
             ))}
           </ul>
+
+          {data.showAd && <AdSlot />}
+
           <p className="footnote">
-            Sample prices · updated {data.fetchedAt.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}. Live prices vary by pincode.
+            Sample prices · checked {new Date(data.fetchedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}. We don't
+            sell anything; you buy in the app you choose.
           </p>
         </>
       )}

@@ -1,4 +1,5 @@
-import type { PlatformId } from './platforms';
+import type { PlatformId } from '../../shared/platforms.ts';
+import type { ProductSummary } from '../../shared/types.ts';
 
 export type Category =
   | 'Dairy & Eggs'
@@ -68,3 +69,14 @@ export const CATALOG: Product[] = [
 export const PRODUCTS_BY_ID: Record<string, Product> = Object.fromEntries(CATALOG.map((p) => [p.id, p]));
 
 export const TRENDING_IDS = ['amul-taaza-500', 'maggi-masala-4', 'aashirvaad-atta-5', 'banana-robusta-6', 'coca-cola-750', 'onion-1kg'];
+
+export function toSummary(p: Product): ProductSummary {
+  const { id, name, brand, size, category, emoji, tint, mrp } = p;
+  return { id, name, brand, size, category, emoji, tint, mrp };
+}
+
+/** Exact (case/space-insensitive) name match, for when the user types the full product name. */
+export function findByExactName(q: string): Product | undefined {
+  const n = q.trim().toLowerCase().replace(/\s+/g, ' ');
+  return CATALOG.find((p) => p.name.toLowerCase() === n);
+}

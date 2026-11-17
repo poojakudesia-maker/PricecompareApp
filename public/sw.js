@@ -1,6 +1,6 @@
 // Minimal offline support: precache the shell, then stale-while-revalidate
 // for same-origin GETs. Bump VERSION to invalidate old caches.
-const VERSION = 'qh-v1';
+const VERSION = 'qh-v2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -21,6 +21,8 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   const isFont = url.hostname.endsWith('fonts.googleapis.com') || url.hostname.endsWith('fonts.gstatic.com');
   if (url.origin !== self.location.origin && !isFont) return;
+  // Prices, suggestions and login must always be live.
+  if (url.pathname.startsWith('/api/')) return;
 
   // Navigations fall back to the cached shell (hash routing keeps all routes on /).
   if (req.mode === 'navigate') {

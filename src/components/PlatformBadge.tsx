@@ -1,4 +1,4 @@
-import type { Platform } from '../data/platforms';
+import type { Platform } from '../../shared/platforms.ts';
 
 export function PlatformBadge({ platform, size = 40 }: { platform: Platform; size?: number }) {
   return (

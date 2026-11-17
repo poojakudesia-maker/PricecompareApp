@@ -1,25 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { LogoMark } from './Logo';
 import { PlatformBadge } from './PlatformBadge';
-import { ArrowUpLeft, ClockIcon, CloseIcon, SearchIcon, TrendIcon } from './Icons';
-import { PRODUCTS_BY_ID, TRENDING_IDS } from '../data/catalog';
-import { PLATFORMS, PLATFORM_ORDER } from '../data/platforms';
-import { lowestPrice } from '../data/priceService';
-import { suggest, type Suggestion } from '../lib/search';
+import { ProductImage } from './ProductImage';
+import { ArrowUpLeft, ClockIcon, CloseIcon, PinIcon, SearchIcon, TrendIcon } from './Icons';
+import { PLATFORMS, PLATFORM_ORDER } from '../../shared/platforms.ts';
+import type { ProductSummary, SuggestionItem } from '../../shared/types.ts';
+import { api } from '../api';
 import { clearRecent, getRecent } from '../lib/recent';
+import { useSession } from '../lib/session';
 import { go, rupee } from '../lib/router';
 
-function useDebounced<T>(value: T, ms: number) {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms);
-    return () => clearTimeout(t);
-  }, [value, ms]);
-  return v;
-}
+const MIN_CHARS = 3;
 
 function Highlighted({ text, ranges }: { text: string; ranges: [number, number][] }) {
-  // Google-style: the part you typed stays regular, the completion is bold.
+  // Google-style: what you typed stays regular, the completion is bold.
   const parts: ReactNode[] = [];
   let i = 0;
   ranges.forEach(([s, e], k) => {
@@ -32,64 +26,125 @@ function Highlighted({ text, ranges }: { text: string; ranges: [number, number][
   return <>{parts}</>;
 }
 
+/** Fetches suggestions once the query has 3+ characters; cancels stale requests. */
+function useSuggestions(query: string) {
+  const [state, setState] = useState<{ q: string; items: SuggestionItem[]; exactId: string | null; loading: boolean }>({
+    q: '',
+    items: [],
+    exactId: null,
+    loading: false,
+  });
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < MIN_CHARS) {
+      setState({ q, items: [], exactId: null, loading: false });
+      return;
+    }
+    setState((s) => ({ ...s, loading: true }));
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      api
+        .suggest(q, ctrl.signal)
+        .then((r) => setState({ q, items: r.items, exactId: r.exactId, loading: false }))
+        .catch((e) => e.name !== 'AbortError' && setState({ q, items: [], exactId: null, loading: false }));
+    }, 140);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [query]);
+
+  return state;
+}
+
 export function Home() {
+  const { user } = useSession();
   const [query, setQuery] = useState('');
   const [focused, setFocused] = useState(false);
   const [active, setActive] = useState(-1);
   const [recent, setRecent] = useState(getRecent);
+  const [trending, setTrending] = useState<(ProductSummary & { fromPrice: number | null })[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const debounced = useDebounced(query, 90);
+  const { q: answeredFor, items, exactId, loading } = useSuggestions(query);
 
-  const suggestions: Suggestion[] = useMemo(() => suggest(debounced), [debounced]);
-  const open = focused && query.trim().length > 0;
+  const typed = query.trim().length;
+  const open = focused && typed > 0;
 
-  useEffect(() => setActive(-1), [debounced]);
+  useEffect(() => {
+    api.trending().then((r) => setTrending(r.items), () => setTrending([]));
+  }, []);
+  useEffect(() => setActive(-1), [answeredFor]);
 
   const choose = (id: string) => {
     inputRef.current?.blur();
     go.product(id);
   };
 
+  const submit = () => {
+    // Full product name typed → open it. Otherwise open the highlighted (or top) suggestion.
+    if (typed < MIN_CHARS) return;
+    if (active >= 0 && items[active]) return choose(items[active].id);
+    if (exactId) return choose(exactId);
+    if (items[0] && answeredFor === query.trim()) return choose(items[0].id);
+  };
+
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (!open) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setActive((a) => Math.min(a + 1, suggestions.length - 1));
+      setActive((a) => Math.min(a + 1, items.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       setActive((a) => Math.max(a - 1, -1));
     } else if (e.key === 'Enter') {
-      const pick = suggestions[active] ?? suggestions[0];
-      if (pick) choose(pick.product.id);
+      e.preventDefault();
+      submit();
     } else if (e.key === 'Escape') {
       inputRef.current?.blur();
     }
   };
 
+  const firstName = user?.profile?.name.split(' ')[0];
+
   return (
     <main className={`home ${open ? 'is-searching' : ''}`}>
       <header className="home__hero">
-        <div className="home__brand">
-          <LogoMark size={34} />
-          <span>
-            Quick<em>Hai</em>
-          </span>
+        <div className="home__bar">
+          <div className="home__brand">
+            <LogoMark size={34} />
+            <span>
+              Quick<em>Hai</em>
+            </span>
+          </div>
+          <button className="avatar" onClick={go.profile} aria-label="Your profile">
+            {(firstName ?? '?').charAt(0).toUpperCase()}
+          </button>
         </div>
+        <button className="home__pin" onClick={go.profile}>
+          <PinIcon /> Prices for <b>{user?.profile?.pincode}</b>
+        </button>
         <h1 className="home__headline">
-          Find the cheapest cart
+          {firstName ? `Hi ${firstName}, ` : ''}what are you
           <br />
-          in under 10 seconds.
+          buying today?
         </h1>
         <div className="home__platforms" aria-label="Platforms compared">
           {PLATFORM_ORDER.map((id) => (
             <PlatformBadge key={id} platform={PLATFORMS[id]} size={26} />
           ))}
-          <span>5 apps compared</span>
+          <span>We compare, you pick the app</span>
         </div>
       </header>
 
       <div className="search">
-        <div className={`search__box ${focused ? 'is-focused' : ''}`}>
+        <form
+          className={`search__box ${focused ? 'is-focused' : ''}`}
+          role="search"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
           <SearchIcon />
           <input
             ref={inputRef}
@@ -110,8 +165,10 @@ export function Home() {
             aria-activedescendant={active >= 0 ? `qh-s-${active}` : undefined}
             aria-label="Search products"
           />
+          {loading && <span className="spinner spinner--accent" aria-hidden="true" />}
           {query && (
             <button
+              type="button"
               className="search__clear"
               aria-label="Clear search"
               onMouseDown={(e) => e.preventDefault()}
@@ -123,55 +180,61 @@ export function Home() {
               <CloseIcon />
             </button>
           )}
-        </div>
+        </form>
 
         {open && (
-          <ul className="suggest" id="qh-suggest" role="listbox" key={debounced}>
-            {suggestions.length === 0 && debounced === query && (
-              <li className="suggest__empty">
-                No match for “{query}”. Try a brand or a simpler word, like <b>milk</b> or <b>atta</b>.
+          <ul className="suggest" id="qh-suggest" role="listbox">
+            {typed < MIN_CHARS && (
+              <li className="suggest__hint">
+                Keep typing… {MIN_CHARS - typed} more letter{MIN_CHARS - typed === 1 ? '' : 's'} to see suggestions
               </li>
             )}
-            {suggestions.map((s, i) => {
-              const from = lowestPrice(s.product.id);
-              return (
+            {typed >= MIN_CHARS && !loading && answeredFor === query.trim() && items.length === 0 && (
+              <li className="suggest__empty">
+                No match for “{query.trim()}”. Try a brand or a simpler word, like <b>milk</b> or <b>atta</b>.
+              </li>
+            )}
+            {typed >= MIN_CHARS &&
+              items.map((s, i) => (
                 <li
-                  key={s.product.id}
+                  key={s.id}
                   id={`qh-s-${i}`}
                   role="option"
                   aria-selected={i === active}
                   className={`suggest__row ${i === active ? 'is-active' : ''}`}
                   style={{ animationDelay: `${i * 28}ms` }}
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => choose(s.product.id)}
+                  onClick={() => choose(s.id)}
                   onMouseEnter={() => setActive(i)}
                 >
-                  <span className="suggest__thumb" style={{ background: s.product.tint }}>
-                    {s.product.emoji}
-                  </span>
+                  <ProductImage product={s} className="suggest__thumb" />
                   <span className="suggest__text">
                     <span className="suggest__name">
-                      <Highlighted text={s.product.name} ranges={s.highlights} />
+                      <Highlighted text={s.name} ranges={s.highlights} />
                     </span>
                     <span className="suggest__meta">
-                      {s.product.size}
-                      {from != null && <> · from <strong>{rupee(from)}</strong></>}
+                      {s.size}
+                      {s.fromPrice != null && (
+                        <>
+                          {' '}
+                          · from <strong>{rupee(s.fromPrice)}</strong>
+                        </>
+                      )}
                     </span>
                   </span>
                   <button
                     className="suggest__fill"
-                    aria-label={`Fill search with ${s.product.name}`}
+                    aria-label={`Fill search with ${s.name}`}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setQuery(s.product.name);
+                      setQuery(s.name);
                     }}
                   >
                     <ArrowUpLeft />
                   </button>
                 </li>
-              );
-            })}
+              ))}
           </ul>
         )}
       </div>
@@ -194,15 +257,12 @@ export function Home() {
               </button>
             </div>
             <div className="chips">
-              {recent
-                .map((id) => PRODUCTS_BY_ID[id])
-                .filter(Boolean)
-                .map((p) => (
-                  <button key={p.id} className="chip" onClick={() => choose(p.id)}>
-                    <span>{p.emoji}</span>
-                    {p.name.length > 22 ? p.name.slice(0, 21) + '…' : p.name}
-                  </button>
-                ))}
+              {recent.map((p) => (
+                <button key={p.id} className="chip" onClick={() => choose(p.id)}>
+                  <span>{p.emoji}</span>
+                  {p.name.length > 22 ? p.name.slice(0, 21) + '…' : p.name}
+                </button>
+              ))}
             </div>
           </section>
         )}
@@ -214,26 +274,22 @@ export function Home() {
             </h2>
           </div>
           <div className="grid">
-            {TRENDING_IDS.map((id, i) => {
-              const p = PRODUCTS_BY_ID[id];
-              const from = lowestPrice(id);
-              return (
-                <button key={id} className="tile" style={{ animationDelay: `${i * 50}ms` }} onClick={() => choose(id)}>
-                  <span className="tile__img" style={{ background: p.tint }}>
-                    {p.emoji}
-                  </span>
-                  <span className="tile__name">{p.name}</span>
-                  <span className="tile__meta">
-                    {p.size}
-                    {from != null && <strong>{rupee(from)}</strong>}
-                  </span>
-                </button>
-              );
-            })}
+            {trending === null
+              ? Array.from({ length: 6 }, (_, i) => <span key={i} className="tile tile--skeleton shimmer" />)
+              : trending.map((p, i) => (
+                  <button key={p.id} className="tile" style={{ animationDelay: `${i * 50}ms` }} onClick={() => choose(p.id)}>
+                    <ProductImage product={p} className="tile__img" />
+                    <span className="tile__name">{p.name}</span>
+                    <span className="tile__meta">
+                      {p.size}
+                      {p.fromPrice != null && <strong>{rupee(p.fromPrice)}</strong>}
+                    </span>
+                  </button>
+                ))}
           </div>
         </section>
 
-        <p className="footnote">Prices shown are sample data for this prototype.</p>
+        <p className="footnote">QuickHai doesn't sell anything. Prices are sample data in this build.</p>
       </div>
     </main>
   );

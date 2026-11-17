@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 
 // Hash routing keeps every screen on "/" so the service worker's offline shell works without server rewrites.
-export type Route = { name: 'home' } | { name: 'product'; id: string };
+export type Route = { name: 'home' } | { name: 'product'; id: string } | { name: 'profile' };
 
 function parse(hash: string): Route {
   const m = hash.match(/^#\/p\/([\w-]+)/);
-  return m ? { name: 'product', id: m[1] } : { name: 'home' };
+  if (m) return { name: 'product', id: m[1] };
+  if (hash.startsWith('#/profile')) return { name: 'profile' };
+  return { name: 'home' };
 }
 
 export function useRoute(): Route {
@@ -21,6 +23,10 @@ export function useRoute(): Route {
 let pushedFromHome = false;
 
 export const go = {
+  profile: () => {
+    pushedFromHome = true;
+    location.hash = '#/profile';
+  },
   product: (id: string) => {
     pushedFromHome = true;
     location.hash = `#/p/${id}`;

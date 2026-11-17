@@ -1,3 +1,6 @@
+// Shared by the server (pricing adapters) and the client (badges, opening apps).
+// Keep this file free of imports so Node can load it without a build step.
+
 export type PlatformId = 'zepto' | 'blinkit' | 'amazonnow' | 'bbdaily' | 'milkbasket';
 
 export interface Platform {
@@ -5,13 +8,21 @@ export interface Platform {
   name: string;
   /** Short monogram shown in the badge. We don't ship third-party logos. */
   mono: string;
-  /** Badge background and foreground. */
   bg: string;
   fg: string;
-  /** Typical delivery promise, used when an offer doesn't override it. */
+  /** Typical delivery promise. */
   eta: string;
   /** Subscription-style services deliver next morning rather than in minutes. */
   scheduled: boolean;
+  /** Android application id, used to open the installed app. */
+  androidPackage: string;
+  /**
+   * How to open the app on Android:
+   *  'url'    – hand the product's https URL to the app (it handles App Links for its domain).
+   *  'launch' – the app has no public web product links, so open it on its home screen.
+   */
+  androidOpen: 'url' | 'launch';
+  /** Web search page, used as the product link until an adapter returns a real product URL. */
   searchUrl: (q: string) => string;
 }
 
@@ -24,7 +35,9 @@ export const PLATFORMS: Record<PlatformId, Platform> = {
     fg: '#FFFFFF',
     eta: '10 mins',
     scheduled: false,
-    searchUrl: (q) => `https://www.zeptonow.com/search?query=${encodeURIComponent(q)}`,
+    androidPackage: 'com.zeptoconsumerapp',
+    androidOpen: 'url',
+    searchUrl: (q) => `https://www.zepto.com/search?query=${encodeURIComponent(q)}`,
   },
   blinkit: {
     id: 'blinkit',
@@ -34,6 +47,8 @@ export const PLATFORMS: Record<PlatformId, Platform> = {
     fg: '#0C831F',
     eta: '12 mins',
     scheduled: false,
+    androidPackage: 'com.grofers.customerapp',
+    androidOpen: 'url',
     searchUrl: (q) => `https://blinkit.com/s/?q=${encodeURIComponent(q)}`,
   },
   amazonnow: {
@@ -44,6 +59,9 @@ export const PLATFORMS: Record<PlatformId, Platform> = {
     fg: '#FF9900',
     eta: '15 mins',
     scheduled: false,
+    // Amazon Now lives inside the main Amazon Shopping app.
+    androidPackage: 'in.amazon.mShop.android.shopping',
+    androidOpen: 'url',
     searchUrl: (q) => `https://www.amazon.in/s?k=${encodeURIComponent(q)}`,
   },
   bbdaily: {
@@ -54,6 +72,8 @@ export const PLATFORMS: Record<PlatformId, Platform> = {
     fg: '#FFFFFF',
     eta: 'Tomorrow, 7 AM',
     scheduled: true,
+    androidPackage: 'com.raincan.android.hybrid',
+    androidOpen: 'launch',
     searchUrl: (q) => `https://www.bigbasket.com/ps/?q=${encodeURIComponent(q)}`,
   },
   milkbasket: {
@@ -64,7 +84,9 @@ export const PLATFORMS: Record<PlatformId, Platform> = {
     fg: '#FFFFFF',
     eta: 'Tomorrow, 7 AM',
     scheduled: true,
-    searchUrl: (q) => `https://www.milkbasket.com/search?q=${encodeURIComponent(q)}`,
+    androidPackage: 'com.milkbasket.app',
+    androidOpen: 'launch',
+    searchUrl: () => 'https://www.milkbasket.com/',
   },
 };
 

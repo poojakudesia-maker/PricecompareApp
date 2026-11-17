@@ -11,3 +11,5 @@ export const BoltIcon = ({ size = 14 }: P) => (<svg {...base(size)}><path d="M13
 export const ExternalIcon = ({ size = 14 }: P) => (<svg {...base(size)}><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" /></svg>);
 export const ShareIcon = ({ size = 20 }: P) => (<svg {...base(size)}><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" /></svg>);
 export const CrownIcon = ({ size = 14 }: P) => (<svg {...base(size)}><path d="M3 7l4 4 5-6 5 6 4-4-2 11H5z" /></svg>);
+export const PinIcon = ({ size = 14 }: P) => (<svg {...base(size)}><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" /></svg>);
+export const ChevronRight = ({ size = 16 }: P) => (<svg {...base(size)}><path d="M9 6l6 6-6 6" /></svg>);
